@@ -647,9 +647,321 @@ function stopRecording() {
   REC.chunks = [];
 
   const durationSec = totalLen / REC.sampleRate;
-  setRecordMessage('Captured ' + totalLen.toLocaleString() + ' samples (' + durationSec.toFixed(2) + 's at ' + REC.sampleRate + ' Hz). Feature estimation isn’t wired up yet — that’s the next step.', 'success');
-
+  const rawSampleRate = REC.sampleRate;
   REC.ctx.close();
+
+  const analysis = analyzeRecording(samples, rawSampleRate);
+  const pitchEst = estimatePitchFeatures(analysis);
+  REC.lastAnalysis = analysis;
+  REC.lastPitchEst = pitchEst;
+
+  if (!pitchEst.ok) {
+    setRecordMessage(
+      'Captured ' + durationSec.toFixed(2) + 's of audio, but found only ' + pitchEst.voicedCount + '/' + pitchEst.totalFrames +
+      ' voiced frames — not enough sustained pitch to estimate anything reliably. Try a louder, steadier "ahh" closer to the mic for the full 5 seconds, with less background noise.',
+      'error'
+    );
+    return;
+  }
+
+  applyEstimate('MDVP:Fo(Hz)', pitchEst.fo, false);
+  applyEstimate('MDVP:Flo(Hz)', pitchEst.flo, false);
+  applyEstimate('MDVP:Fhi(Hz)', pitchEst.fhi, false);
+
+  const noiseEst = estimateAmplitudeNoiseFeatures(analysis);
+  REC.lastNoiseEst = noiseEst;
+  let noiseMsg = '(Nonlinear features aren’t wired up yet — that’s next.)';
+  if (noiseEst.ok) {
+    const nhr = mapNhr(noiseEst.meanAperiodicity, noiseEst.jitterProxy);
+    const apq = mapApq(noiseEst.apqProxy);
+    applyEstimate('NHR', nhr, false);
+    applyEstimate('MDVP:APQ', apq, false);
+    noiseMsg = 'NHR ' + nhr.toFixed(4) + ', APQ ' + apq.toFixed(4) +
+      ' (raw: jitter ' + (noiseEst.jitterProxy * 100).toFixed(2) + '%, aperiodicity ' + noiseEst.meanAperiodicity.toFixed(3) +
+      ', amp. perturbation ' + (noiseEst.apqProxy * 100).toFixed(2) + '%).';
+
+    const nonlinear = estimateNonlinearFeatures(analysis);
+    if (nonlinear.ok) {
+      const ppe = mapPpe(nonlinear.entropyNorm);
+      const spread1 = mapSpread1(nonlinear.cv);
+      const spread2 = mapSpread2(noiseEst.jitterProxy);
+      applyEstimate('PPE', ppe, true);
+      applyEstimate('spread1', spread1, true);
+      applyEstimate('spread2', spread2, true);
+      noiseMsg += ' PPE ' + ppe.toFixed(4) + ', spread1 ' + spread1.toFixed(3) + ', spread2 ' + spread2.toFixed(4) +
+        ' (raw: F0 CV ' + (nonlinear.cv * 100).toFixed(2) + '%, entropy ' + nonlinear.entropyNorm.toFixed(3) +
+        ') — marked approx., these three are rough entropy/variability proxies, not the original nonlinear dynamical measures.';
+    }
+  }
+  update();
+
+  setRecordMessage(
+    'Pitch detected from ' + pitchEst.voicedCount + '/' + pitchEst.totalFrames + ' voiced frames — ' +
+    'Fo ' + pitchEst.fo.toFixed(1) + ' Hz, range ' + pitchEst.flo.toFixed(1) + '–' + pitchEst.fhi.toFixed(1) + ' Hz. ' +
+    noiseMsg,
+    'success'
+  );
+}
+
+function estimateAmplitudeNoiseFeatures(analysis) {
+  const frames = analysis.frames;
+  const voiced = frames.filter(f => f.voiced);
+  if (voiced.length < 6) return { ok: false };
+
+  // Jitter-like: relative period difference between temporally adjacent voiced frames.
+  let jitterSum = 0, jitterCount = 0, prevPeriod = null;
+  for (const f of frames) {
+    if (!f.voiced) { prevPeriod = null; continue; }
+    const period = 1 / f.freq;
+    if (prevPeriod !== null) {
+      jitterSum += Math.abs(period - prevPeriod) / ((period + prevPeriod) / 2);
+      jitterCount++;
+    }
+    prevPeriod = period;
+  }
+  const jitterProxy = jitterCount > 0 ? jitterSum / jitterCount : 0;
+
+  // Mean YIN aperiodicity (d' at the chosen lag) across voiced frames: 0 = perfectly periodic, higher = noisier.
+  const meanAperiodicity = voiced.reduce((s, f) => s + f.aperiodicity, 0) / voiced.length;
+
+  // Amplitude perturbation: deviation of each voiced frame's RMS from a 3-frame smoothed local average.
+  const ampSeries = voiced.map(f => f.rms);
+  let apqSum = 0, apqCount = 0;
+  for (let i = 1; i < ampSeries.length - 1; i++) {
+    const smoothed = (ampSeries[i - 1] + ampSeries[i] + ampSeries[i + 1]) / 3;
+    apqSum += Math.abs(ampSeries[i] - smoothed);
+    apqCount++;
+  }
+  const meanAmp = ampSeries.reduce((s, a) => s + a, 0) / (ampSeries.length || 1);
+  const apqProxy = (apqCount > 0 && meanAmp > 0) ? (apqSum / apqCount) / meanAmp : 0;
+
+  return { ok: true, jitterProxy, meanAperiodicity, apqProxy };
+}
+
+function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+
+// Heuristic mapping from YIN aperiodicity + local jitter into the dataset's NHR range.
+// Not a real harmonics-to-noise ratio computation — see the "About these estimates" note in the UI.
+function mapNhr(meanAperiodicity, jitterProxy) {
+  const raw = clamp01(meanAperiodicity / 0.4) * 0.75 + clamp01(jitterProxy / 0.03) * 0.25;
+  const shaped = Math.pow(raw, 1.4);
+  const [lo, hi] = MODEL.ranges['NHR'];
+  return lo + (hi - lo) * shaped;
+}
+
+// Heuristic mapping from frame-level amplitude perturbation into the dataset's APQ range.
+function mapApq(apqProxy) {
+  const raw = clamp01(apqProxy / 0.12);
+  const [lo, hi] = MODEL.ranges['MDVP:APQ'];
+  return lo + (hi - lo) * raw;
+}
+
+// ---- Nonlinear dynamical proxies (PPE, spread1, spread2) — the roughest approximations here. ----
+// The real Little et al. measures come from recurrence-period-density-entropy / nonlinear phase-space
+// analysis of the full waveform. We approximate with much simpler statistics of the frame-level F0
+// track: PPE as entropy of semitone deviations from the median pitch (fixed-width bins, so it reflects
+// both spread and shape, not just relative shape), and spread1/spread2 as monotonic rescalings of pitch
+// coefficient of variation and short-term jitter into the dataset's observed ranges.
+function estimateNonlinearFeatures(analysis) {
+  const voiced = analysis.frames.filter(f => f.voiced);
+  if (voiced.length < 6) return { ok: false };
+
+  const freqs = voiced.map(f => f.freq);
+  const mean = freqs.reduce((s, f) => s + f, 0) / freqs.length;
+  const variance = freqs.reduce((s, f) => s + (f - mean) * (f - mean), 0) / freqs.length;
+  const cv = Math.sqrt(variance) / mean;
+
+  // Centered on the mean (not median): the median guarantees an exact ~50/50 split of samples
+  // across the center, which forces about 1 bit of artificial entropy even for a dead-stable pitch
+  // (all deviations landing straddled across a bin boundary). The mean doesn't have that property.
+  const logFreqs = freqs.map(f => Math.log2(f));
+  const meanLog = logFreqs.reduce((s, lf) => s + lf, 0) / logFreqs.length;
+  const semitoneDevs = logFreqs.map(lf => (lf - meanLog) * 12);
+
+  const numBins = 21; // odd, so a real near-zero cluster falls inside one center bin, not split across a boundary
+  const halfRange = 2; // clamp at +/- 2 semitones from the mean
+  const counts = new Array(numBins).fill(0);
+  for (const dev of semitoneDevs) {
+    const clamped = Math.max(-halfRange, Math.min(halfRange, dev));
+    let bin = Math.floor((clamped + halfRange) / (2 * halfRange) * numBins);
+    if (bin >= numBins) bin = numBins - 1;
+    if (bin < 0) bin = 0;
+    counts[bin]++;
+  }
+  const total = semitoneDevs.length;
+  let entropy = 0;
+  for (const c of counts) {
+    if (c === 0) continue;
+    const p = c / total;
+    entropy -= p * Math.log2(p);
+  }
+  const entropyNorm = entropy / Math.log2(numBins);
+
+  return { ok: true, cv, entropyNorm };
+}
+
+function mapPpe(entropyNorm) {
+  const [lo, hi] = MODEL.ranges['PPE'];
+  return lo + (hi - lo) * clamp01(entropyNorm);
+}
+
+function mapSpread1(cv) {
+  const [lo, hi] = MODEL.ranges['spread1'];
+  return lo + (hi - lo) * clamp01(cv / 0.08);
+}
+
+function mapSpread2(jitterProxy) {
+  const [lo, hi] = MODEL.ranges['spread2'];
+  return lo + (hi - lo) * clamp01(jitterProxy / 0.02);
+}
+
+// ---- Pitch estimation: decimate -> frame -> YIN per frame -> aggregate ----
+
+function decimateSignal(samples, factor) {
+  if (factor <= 1) return samples;
+  const outLen = Math.floor(samples.length / factor);
+  const out = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    let sum = 0;
+    for (let j = 0; j < factor; j++) sum += samples[i * factor + j];
+    out[i] = sum / factor;
+  }
+  return out;
+}
+
+// YIN pitch detection (de Cheveigné & Kawahara, 2002), simplified for a single frame.
+function yinPitch(buf, sampleRate, minFreq, maxFreq, threshold) {
+  const n = buf.length;
+  const maxTau = Math.min(n - 1, Math.floor(sampleRate / minFreq));
+  const minTau = Math.max(2, Math.floor(sampleRate / maxFreq));
+  if (maxTau <= minTau) return null;
+
+  const d = new Float32Array(maxTau + 1);
+  for (let tau = 1; tau <= maxTau; tau++) {
+    let sum = 0;
+    for (let i = 0; i < n - maxTau; i++) {
+      const diff = buf[i] - buf[i + tau];
+      sum += diff * diff;
+    }
+    d[tau] = sum;
+  }
+
+  const cmnd = new Float32Array(maxTau + 1);
+  cmnd[0] = 1;
+  let runningSum = 0;
+  for (let tau = 1; tau <= maxTau; tau++) {
+    runningSum += d[tau];
+    cmnd[tau] = runningSum > 1e-12 ? d[tau] * tau / runningSum : 1;
+  }
+
+  let tauEstimate = -1;
+  for (let tau = minTau; tau <= maxTau; tau++) {
+    if (cmnd[tau] < threshold) {
+      while (tau + 1 <= maxTau && cmnd[tau + 1] < cmnd[tau]) tau++;
+      tauEstimate = tau;
+      break;
+    }
+  }
+
+  let aperiodicity;
+  if (tauEstimate === -1) {
+    let bestTau = minTau, bestVal = Infinity;
+    for (let tau = minTau; tau <= maxTau; tau++) {
+      if (cmnd[tau] < bestVal) { bestVal = cmnd[tau]; bestTau = tau; }
+    }
+    tauEstimate = bestTau;
+    aperiodicity = bestVal;
+  } else {
+    aperiodicity = cmnd[tauEstimate];
+  }
+
+  let betterTau = tauEstimate;
+  if (tauEstimate > minTau && tauEstimate < maxTau) {
+    const s0 = cmnd[tauEstimate - 1], s1 = cmnd[tauEstimate], s2 = cmnd[tauEstimate + 1];
+    const denom = 2 * (2 * s1 - s2 - s0);
+    if (Math.abs(denom) > 1e-12) betterTau = tauEstimate + (s2 - s0) / denom;
+  }
+
+  return { freq: sampleRate / betterTau, tau: betterTau, aperiodicity };
+}
+
+function analyzeRecording(rawSamples, rawSampleRate) {
+  const decimFactor = Math.max(1, Math.round(rawSampleRate / 12000));
+  const sr = rawSampleRate / decimFactor;
+  const samples = decimateSignal(rawSamples, decimFactor);
+
+  const frameLen = Math.round(sr * 0.05); // 50ms frames
+  const hopLen = Math.round(sr * 0.025);  // 25ms hop (50% overlap)
+  const minFreq = 70, maxFreq = 500, yinThreshold = 0.20;
+
+  let totalEnergy = 0;
+  for (let i = 0; i < samples.length; i++) totalEnergy += samples[i] * samples[i];
+  const overallRms = Math.sqrt(totalEnergy / (samples.length || 1));
+  const silenceFloor = Math.max(0.004, overallRms * 0.12);
+
+  const frames = [];
+  for (let start = 0; start + frameLen <= samples.length; start += hopLen) {
+    const buf = samples.subarray(start, start + frameLen);
+    let e = 0;
+    for (let i = 0; i < buf.length; i++) e += buf[i] * buf[i];
+    const rms = Math.sqrt(e / buf.length);
+    const tSec = start / sr;
+
+    if (rms < silenceFloor) {
+      frames.push({ tSec, rms, voiced: false });
+      continue;
+    }
+    const pitch = yinPitch(buf, sr, minFreq, maxFreq, yinThreshold);
+    if (!pitch || pitch.aperiodicity > 0.4 || pitch.freq < minFreq || pitch.freq > maxFreq) {
+      frames.push({ tSec, rms, voiced: false, aperiodicity: pitch ? pitch.aperiodicity : 1 });
+      continue;
+    }
+    frames.push({ tSec, rms, voiced: true, freq: pitch.freq, tau: pitch.tau, aperiodicity: pitch.aperiodicity });
+  }
+
+  return { frames, sr, hopLen, frameLen, overallRms, silenceFloor };
+}
+
+function estimatePitchFeatures(analysis) {
+  const voiced = analysis.frames.filter(f => f.voiced);
+  const total = analysis.frames.length;
+  if (voiced.length < 6) {
+    return { ok: false, voicedCount: voiced.length, totalFrames: total };
+  }
+
+  const freqsRaw = voiced.map(f => f.freq).sort((a, b) => a - b);
+  const median = freqsRaw[Math.floor(freqsRaw.length / 2)];
+  // Discard likely octave errors (freq far from the frame's own median) before aggregating.
+  const filtered = freqsRaw.filter(f => f > median / 1.6 && f < median * 1.6);
+  const use = filtered.length >= Math.max(4, freqsRaw.length * 0.4) ? filtered : freqsRaw;
+
+  const mean = use.reduce((s, f) => s + f, 0) / use.length;
+  const sorted = [...use].sort((a, b) => a - b);
+  const pct = (p) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
+
+  return {
+    ok: true,
+    voicedCount: voiced.length,
+    totalFrames: total,
+    fo: mean,
+    flo: pct(0.05),
+    fhi: pct(0.95),
+    freqsUsed: use,
+  };
+}
+
+function clampToRange(f, val) {
+  const [lo, hi] = MODEL.ranges[f];
+  return Math.min(hi, Math.max(lo, val));
+}
+
+function applyEstimate(f, value, approx) {
+  const d = decimalsFor(f);
+  const clamped = clampToRange(f, value);
+  state[f] = clamped;
+  document.getElementById(`slider-${cssId(f)}`).value = clamped;
+  document.getElementById(`val-${cssId(f)}`).textContent = clamped.toFixed(d);
+  document.getElementById(`approx-${cssId(f)}`).classList.toggle('show', !!approx);
 }
 </script>
 </body>
