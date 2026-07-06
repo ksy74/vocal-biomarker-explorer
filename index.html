@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vocal Biomarker Explorer &mdash; Parkinson's Voice Screening Model</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #F4F6F5;
+    --panel: #FFFFFF;
+    --ink: #17221D;
+    --muted: #5C6B64;
+    --line: #D8E0DB;
+    --teal: #1F6F5C;
+    --teal-bg: #E4F1EC;
+    --amber: #A9761F;
+    --amber-bg: #FBF0DD;
+    --red: #A63B26;
+    --red-bg: #FAE7E2;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 48px 24px 64px; }
+  .eyebrow {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--teal);
+    margin: 0 0 10px;
+  }
+  h1 {
+    font-family: 'IBM Plex Serif', serif;
+    font-weight: 600;
+    font-size: 32px;
+    line-height: 1.2;
+    margin: 0 0 12px;
+    letter-spacing: -0.01em;
+  }
+  .dek {
+    font-size: 15px;
+    color: var(--muted);
+    max-width: 640px;
+    line-height: 1.6;
+    margin: 0 0 36px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1.15fr 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  @media (max-width: 760px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 24px 26px;
+  }
+  .group-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 14px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+  }
+  .group-label:first-child { padding-top: 0; border-top: none; }
+  .slider-row { margin-bottom: 18px; }
+  .slider-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+  }
+  .slider-name { font-size: 13.5px; font-weight: 500; }
+  .slider-val {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    color: var(--teal);
+    font-weight: 500;
+  }
+  input[type=range] {
+    width: 100%;
+    -webkit-appearance: none;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--line);
+    outline: none;
+    margin: 0;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--teal);
+    cursor: pointer;
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 1px var(--teal);
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--teal);
+    cursor: pointer;
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 1px var(--teal);
+  }
+  .range-labels {
+    display: flex;
+    justify-content: space-between;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+  .gauge-wrap { text-align: center; }
+  svg#gauge { width: 100%; max-width: 300px; }
+  .prob-readout {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 42px;
+    font-weight: 500;
+    margin: 4px 0 2px;
+  }
+  .prob-caption {
+    font-size: 12px;
+    color: var(--muted);
+    margin: 0 0 14px;
+  }
+  .badge {
+    display: inline-block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-weight: 500;
+    margin-bottom: 20px;
+  }
+  .badge.low { background: var(--teal-bg); color: var(--teal); }
+  .badge.mid { background: var(--amber-bg); color: var(--amber); }
+  .badge.high { background: var(--red-bg); color: var(--red); }
+  .contrib-title {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: left;
+    margin: 8px 0 12px;
+    border-top: 1px solid var(--line);
+    padding-top: 16px;
+  }
+  .contrib-row {
+    display: grid;
+    grid-template-columns: 90px 1fr;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 12px;
+  }
+  .contrib-name { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted); text-align: right; }
+  .contrib-bar-track {
+    position: relative;
+    height: 8px;
+    background: var(--line);
+    border-radius: 4px;
+  }
+  .contrib-bar-fill {
+    position: absolute;
+    top: 0; bottom: 0;
+    border-radius: 4px;
+  }
+  .presets {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 28px 0 6px;
+  }
+  button.preset {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 9px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  button.preset:hover { border-color: var(--teal); color: var(--teal); }
+  .footnote {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.7;
+    margin-top: 28px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+  }
+  .footnote b { color: var(--ink); font-weight: 500; }
+  .record-btn {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 10px 18px;
+    border-radius: 8px;
+    border: 1px solid var(--teal);
+    background: var(--teal);
+    color: #fff;
+    cursor: pointer;
+  }
+  .record-btn:hover { opacity: 0.92; }
+  .record-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+  .record-btn.recording { background: var(--red); border-color: var(--red); }
+  .record-status {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .record-canvas {
+    width: 100%;
+    height: 80px;
+    display: block;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    margin-top: 4px;
+  }
+  .record-message {
+    font-size: 12.5px;
+    margin: 10px 0 0;
+    min-height: 16px;
+  }
+  .record-message.error { color: var(--red); }
+  .record-message.info { color: var(--muted); }
+  .record-message.success { color: var(--teal); }
+  .approx-badge {
+    display: none;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--amber);
+    background: var(--amber-bg);
+    border-radius: 4px;
+    padding: 2px 6px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+  .approx-badge.show { display: inline-block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Patient-independent validation &middot; AUC 0.79</p>
+  <h1>Vocal biomarker explorer</h1>
+  <p class="dek">Adjust the acoustic measures below to see how a logistic regression model &mdash; trained on sustained vowel recordings and validated so no patient's voice ever appears in both training and test &mdash; scores the likelihood of Parkinson's-associated vocal impairment.</p>
+
+  <div class="panel" id="record-panel" style="margin-bottom:20px;">
+    <p class="group-label" style="padding-top:0;border-top:none;">Record your voice</p>
+    <p style="font-size:13.5px;color:var(--muted);line-height:1.6;margin:0 0 16px;max-width:640px;">
+      Click Start, then sustain the vowel &ldquo;ahh&rdquo; at a comfortable pitch and loudness for about 5 seconds. We'll estimate as many of the sliders below as we reliably can from the recording and refresh the gauge automatically.
+    </p>
+    <div style="display:flex; align-items:center; gap:14px; margin-bottom:12px; flex-wrap:wrap;">
+      <button id="record-btn" class="record-btn">Start Recording</button>
+      <span id="record-status" class="record-status"></span>
+    </div>
+    <canvas id="record-canvas" class="record-canvas" width="900" height="80"></canvas>
+    <p id="record-message" class="record-message info"></p>
+    <p class="footnote" style="margin-top:16px; padding-top:14px;">
+      <b>About these estimates.</b> Everything in this panel is computed client-side in your browser from an uncalibrated microphone using basic pitch-detection and amplitude-analysis code &mdash; it is <b>not</b> the clinical MDVP acoustic analysis software the underlying model was actually trained on. Populated sliders (especially those marked <span class="approx-badge show" style="display:inline-block;">approx.</span>) are rough, uncalibrated estimates for exploring the model, not a measurement to draw any real conclusion from.
+    </p>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <p class="group-label">Frequency instability (nonlinear)</p>
+      <div id="sliders-group-1"></div>
+      <p class="group-label">Pitch range (Hz)</p>
+      <div id="sliders-group-2"></div>
+      <p class="group-label">Amplitude &amp; noise</p>
+      <div id="sliders-group-3"></div>
+    </div>
+
+    <div class="panel gauge-wrap">
+      <svg id="gauge" viewBox="0 0 300 190">
+        <path d="M 30 160 A 120 120 0 0 1 270 160" fill="none" stroke="#D8E0DB" stroke-width="18" stroke-linecap="round"/>
+        <path id="gauge-fill" d="M 30 160 A 120 120 0 0 1 270 160" fill="none" stroke="#1F6F5C" stroke-width="18" stroke-linecap="round" stroke-dasharray="377" stroke-dashoffset="377"/>
+        <line id="tick-screen" x1="150" y1="160" x2="150" y2="140" stroke="#5C6B64" stroke-width="2"/>
+        <line id="tick-confirm" x1="150" y1="160" x2="150" y2="140" stroke="#5C6B64" stroke-width="2"/>
+        <line id="needle" x1="150" y1="160" x2="150" y2="48" stroke="#17221D" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="150" cy="160" r="7" fill="#17221D"/>
+      </svg>
+      <p class="prob-readout" id="prob-readout">0%</p>
+      <p class="prob-caption">estimated probability of PD-associated vocal impairment</p>
+      <div id="badge" class="badge low">below screening threshold</div>
+
+      <p class="contrib-title">Feature contributions</p>
+      <div id="contributions"></div>
+    </div>
+  </div>
+
+  <div class="presets">
+    <button class="preset" onclick="loadPreset('pd')">Load PD-typical example</button>
+    <button class="preset" onclick="loadPreset('healthy')">Load healthy-typical example</button>
+    <button class="preset" onclick="loadPreset('mean')">Reset to dataset mean</button>
+  </div>
+
+  <p class="footnote">
+    <b>How to read this.</b> The dial shows the model's output probability. The lower tick marks the 0.5 <b>screening</b> threshold (89% sensitivity, 35% specificity in patient-independent testing); the upper tick marks the 0.91 <b>confirmatory</b> threshold (50% sensitivity, 94% specificity). Feature contribution bars show how far each measure pushes the score toward PD (right, red) or away from it (left, teal), based on the standardized value relative to the full dataset.<br><br>
+    <b>This is a research and educational demonstration, not a diagnostic tool.</b> The underlying model is an 8-feature logistic regression fit to the public Oxford Parkinson's Disease Detection dataset (195 recordings, 32 individuals), evaluated with patient-independent cross-validation (AUC = 0.79). It has not been validated on an external cohort and should not be used to assess any real individual.
+  </p>
+</div>
+
+<script>
+const MODEL = {
+  features: ["PPE","spread1","MDVP:Fo(Hz)","MDVP:Flo(Hz)","spread2","MDVP:Fhi(Hz)","MDVP:APQ","NHR"],
+  labels: {
+    "PPE": "Pitch period entropy (PPE)",
+    "spread1": "Spread1",
+    "MDVP:Fo(Hz)": "Average pitch (Fo)",
+    "MDVP:Flo(Hz)": "Minimum pitch (Flo)",
+    "spread2": "Spread2",
+    "MDVP:Fhi(Hz)": "Maximum pitch (Fhi)",
+    "MDVP:APQ": "Amplitude perturbation (APQ)",
+    "NHR": "Noise-to-harmonic ratio (NHR)"
+  },
+  groups: {
+    "PPE": 1, "spread1": 1, "spread2": 1,
+    "MDVP:Fo(Hz)": 2, "MDVP:Fhi(Hz)": 2, "MDVP:Flo(Hz)": 2,
+    "MDVP:APQ": 3, "NHR": 3
+  },
+  coef: [0.79612874119545, 1.0104482602118714, -0.0005784035877625599, -0.07630425504886665, 0.5637703068705813, -0.26427514619570397, 1.03168860631144, -0.42277188110498704],
+  intercept: 2.3453719015681913,
+  mean: [0.20655164102564103, -5.684396743589745, 154.22864102564102, 116.32463076923077, 0.22651034871794873, 197.10491794871797, 0.02408148717948718, 0.02484707692307692],
+  scale: [0.08988795028412536, 1.0874087661470229, 41.283799965906525, 43.40967637841882, 0.08319162680463385, 91.25665238831346, 0.016903227224669554, 0.04031467829869681],
+  ranges: {
+    "PPE": [0.044539, 0.527367],
+    "spread1": [-7.964984, -2.434031],
+    "MDVP:Fo(Hz)": [88.333, 260.105],
+    "MDVP:Flo(Hz)": [65.476, 239.17],
+    "spread2": [0.006274, 0.450493],
+    "MDVP:Fhi(Hz)": [102.145, 592.03],
+    "MDVP:APQ": [0.00719, 0.13778],
+    "NHR": [0.00065, 0.31482]
+  }
+};
+
+const PRESETS = {
+  pd: {"PPE":0.2338282244897959,"spread1":-5.333419721088434,"MDVP:Fo(Hz)":145.1807619047619,"MDVP:Flo(Hz)":106.89355782312924,"spread2":0.2481326666666667,"MDVP:Fhi(Hz)":188.44146258503403,"MDVP:APQ":0.0276004081632653,"NHR":0.029210952380952383},
+  healthy: {"PPE":0.12301710416666667,"spread1":-6.759263874999999,"MDVP:Fo(Hz)":181.9377708333333,"MDVP:Flo(Hz)":145.2072916666667,"spread2":0.16029200000000002,"MDVP:Fhi(Hz)":223.63675,"MDVP:APQ":0.013304791666666668,"NHR":0.011482708333333333},
+  mean: Object.fromEntries(MODEL.features.map((f,i)=>[f, MODEL.mean[i]]))
+};
+
+function decimalsFor(f) {
+  const span = MODEL.ranges[f][1] - MODEL.ranges[f][0];
+  if (span < 1) return 4;
+  if (span < 20) return 3;
+  return 1;
+}
+
+function stepFor(f) {
+  const d = decimalsFor(f);
+  return Math.pow(10, -d);
+}
+
+let state = {...PRESETS.mean};
+
+function buildSliders() {
+  const containers = {1: document.getElementById('sliders-group-1'), 2: document.getElementById('sliders-group-2'), 3: document.getElementById('sliders-group-3')};
+  MODEL.features.forEach(f => {
+    const [lo, hi] = MODEL.ranges[f];
+    const d = decimalsFor(f);
+    const row = document.createElement('div');
+    row.className = 'slider-row';
+    row.innerHTML = `
+      <div class="slider-top">
+        <span class="slider-name">${MODEL.labels[f]}<span class="approx-badge" id="approx-${cssId(f)}" title="Rough client-side approximation from your recording, not the clinical computation">approx.</span></span>
+        <span class="slider-val" id="val-${cssId(f)}">${state[f].toFixed(d)}</span>
+      </div>
+      <input type="range" id="slider-${cssId(f)}" min="${lo}" max="${hi}" step="${stepFor(f)}" value="${state[f]}">
+      <div class="range-labels"><span>${lo.toFixed(d)}</span><span>${hi.toFixed(d)}</span></div>
+    `;
+    containers[MODEL.groups[f]].appendChild(row);
+    document.getElementById(`slider-${cssId(f)}`).addEventListener('input', (e) => {
+      state[f] = parseFloat(e.target.value);
+      document.getElementById(`val-${cssId(f)}`).textContent = state[f].toFixed(d);
+      document.getElementById(`approx-${cssId(f)}`).classList.remove('show');
+      update();
+    });
+  });
+}
+
+function cssId(f) { return f.replace(/[^a-zA-Z0-9]/g, ''); }
+
+function sigmoid(z) { return 1 / (1 + Math.exp(-z)); }
+
+function computeContributions() {
+  return MODEL.features.map((f, i) => {
+    const stdVal = (state[f] - MODEL.mean[i]) / MODEL.scale[i];
+    return { feature: f, contrib: MODEL.coef[i] * stdVal };
+  });
+}
+
+function update() {
+  const contribs = computeContributions();
+  const z = MODEL.intercept + contribs.reduce((s, c) => s + c.contrib, 0);
+  const prob = sigmoid(z);
+
+  document.getElementById('prob-readout').textContent = Math.round(prob * 100) + '%';
+
+  const arcLen = 377;
+  document.getElementById('gauge-fill').setAttribute('stroke-dashoffset', arcLen * (1 - prob));
+
+  const angle = -90 + prob * 180;
+  const rad = angle * Math.PI / 180;
+  const nx = 150 + 112 * Math.sin(rad);
+  const ny = 160 - 112 * Math.cos(rad);
+  document.getElementById('needle').setAttribute('x2', nx.toFixed(1));
+  document.getElementById('needle').setAttribute('y2', ny.toFixed(1));
+
+  setTick('tick-screen', 0.5);
+  setTick('tick-confirm', 0.91);
+
+  const badge = document.getElementById('badge');
+  if (prob < 0.5) {
+    badge.className = 'badge low';
+    badge.textContent = 'below screening threshold';
+    document.getElementById('gauge-fill').setAttribute('stroke', '#1F6F5C');
+  } else if (prob < 0.91) {
+    badge.className = 'badge mid';
+    badge.textContent = 'above screening threshold';
+    document.getElementById('gauge-fill').setAttribute('stroke', '#A9761F');
+  } else {
+    badge.className = 'badge high';
+    badge.textContent = 'above confirmatory threshold';
+    document.getElementById('gauge-fill').setAttribute('stroke', '#A63B26');
+  }
+
+  renderContributions(contribs);
+}
+
+function setTick(id, p) {
+  const angle = -90 + p * 180;
+  const rad = angle * Math.PI / 180;
+  const x2 = 150 + 120 * Math.sin(rad);
+  const y2 = 160 - 120 * Math.cos(rad);
+  const x1 = 150 + 102 * Math.sin(rad);
+  const y1 = 160 - 102 * Math.cos(rad);
+  const el = document.getElementById(id);
+  el.setAttribute('x1', x1.toFixed(1));
+  el.setAttribute('y1', y1.toFixed(1));
+  el.setAttribute('x2', x2.toFixed(1));
+  el.setAttribute('y2', y2.toFixed(1));
+}
+
+function renderContributions(contribs) {
+  const maxAbs = Math.max(...contribs.map(c => Math.abs(c.contrib)), 0.01);
+  const container = document.getElementById('contributions');
+  container.innerHTML = '';
+  contribs.sort((a, b) => Math.abs(b.contrib) - Math.abs(a.contrib)).forEach(c => {
+    const pct = Math.min(Math.abs(c.contrib) / maxAbs * 50, 50);
+    const color = c.contrib >= 0 ? '#A63B26' : '#1F6F5C';
+    const row = document.createElement('div');
+    row.className = 'contrib-row';
+    const left = c.contrib < 0 ? (50 - pct) : 50;
+    row.innerHTML = `
+      <span class="contrib-name">${MODEL.labels[c.feature].split(' (')[0]}</span>
+      <div class="contrib-bar-track">
+        <div class="contrib-bar-fill" style="left:${left}%; width:${pct}%; background:${color};"></div>
+      </div>
+    `;
+    container.appendChild(row);
+  });
+}
+
+function loadPreset(name) {
+  state = {...PRESETS[name]};
+  MODEL.features.forEach(f => {
+    const d = decimalsFor(f);
+    document.getElementById(`slider-${cssId(f)}`).value = state[f];
+    document.getElementById(`val-${cssId(f)}`).textContent = state[f].toFixed(d);
+    document.getElementById(`approx-${cssId(f)}`).classList.remove('show');
+  });
+  update();
+}
+
+buildSliders();
+update();
+
+// ---------- Record your voice ----------
+const REC = {
+  ctx: null,
+  stream: null,
+  source: null,
+  analyser: null,
+  processor: null,
+  silentGain: null,
+  chunks: [],
+  sampleRate: 44100,
+  recording: false,
+  rafId: null,
+  startTime: 0,
+  DURATION: 5, // seconds
+};
+
+const recordBtn = document.getElementById('record-btn');
+const recordStatus = document.getElementById('record-status');
+const recordMessage = document.getElementById('record-message');
+const recordCanvas = document.getElementById('record-canvas');
+const canvasCtx = recordCanvas.getContext('2d');
+
+function setRecordMessage(text, kind) {
+  recordMessage.textContent = text || '';
+  recordMessage.className = 'record-message ' + (kind || 'info');
+}
+
+function supportsRecording() {
+  return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && (window.AudioContext || window.webkitAudioContext));
+}
+
+recordBtn.addEventListener('click', () => {
+  if (!REC.recording) startRecording();
+});
+
+async function startRecording() {
+  if (!supportsRecording()) {
+    setRecordMessage('Your browser does not support microphone recording (getUserMedia / Web Audio API unavailable). Try a recent version of Chrome, Edge, or Firefox.', 'error');
+    return;
+  }
+  recordBtn.disabled = true;
+  setRecordMessage('Requesting microphone access…', 'info');
+
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+  } catch (err) {
+    recordBtn.disabled = false;
+    if (err.name === 'NotAllowedError' || err.name === 'SecurityError') {
+      setRecordMessage('Microphone access was denied. Allow microphone access for this page (check the browser address-bar icon) and try again.', 'error');
+    } else if (err.name === 'NotFoundError') {
+      setRecordMessage('No microphone was found on this device.', 'error');
+    } else {
+      setRecordMessage('Could not access the microphone (' + err.message + ').', 'error');
+    }
+    return;
+  }
+
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  REC.ctx = new AudioContextClass();
+  REC.sampleRate = REC.ctx.sampleRate;
+  REC.stream = stream;
+  REC.source = REC.ctx.createMediaStreamSource(stream);
+  REC.analyser = REC.ctx.createAnalyser();
+  REC.analyser.fftSize = 2048;
+  REC.source.connect(REC.analyser);
+
+  REC.processor = REC.ctx.createScriptProcessor(4096, 1, 1);
+  REC.chunks = [];
+  REC.processor.onaudioprocess = (e) => {
+    if (!REC.recording) return;
+    REC.chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  };
+  REC.source.connect(REC.processor);
+  REC.silentGain = REC.ctx.createGain();
+  REC.silentGain.gain.value = 0;
+  REC.processor.connect(REC.silentGain);
+  REC.silentGain.connect(REC.ctx.destination);
+
+  REC.recording = true;
+  REC.startTime = REC.ctx.currentTime;
+  recordBtn.textContent = 'Recording…';
+  recordBtn.classList.add('recording');
+  recordBtn.disabled = true;
+  setRecordMessage('', 'info');
+
+  drawWaveform();
+
+  setTimeout(() => stopRecording(), REC.DURATION * 1000);
+}
+
+function drawWaveform() {
+  const w = recordCanvas.width, h = recordCanvas.height;
+  const dataArray = new Uint8Array(REC.analyser.fftSize);
+
+  function frame() {
+    if (!REC.recording) return;
+    REC.rafId = requestAnimationFrame(frame);
+    REC.analyser.getByteTimeDomainData(dataArray);
+
+    canvasCtx.fillStyle = '#F4F6F5';
+    canvasCtx.fillRect(0, 0, w, h);
+    canvasCtx.lineWidth = 1.5;
+    canvasCtx.strokeStyle = '#1F6F5C';
+    canvasCtx.beginPath();
+    const slice = w / dataArray.length;
+    let x = 0;
+    for (let i = 0; i < dataArray.length; i++) {
+      const v = dataArray[i] / 128.0;
+      const y = v * h / 2;
+      if (i === 0) canvasCtx.moveTo(x, y); else canvasCtx.lineTo(x, y);
+      x += slice;
+    }
+    canvasCtx.stroke();
+
+    const elapsed = REC.ctx.currentTime - REC.startTime;
+    const remaining = Math.max(0, REC.DURATION - elapsed);
+    recordStatus.textContent = 'Recording — ' + remaining.toFixed(1) + 's left. Sustain "ahh"…';
+  }
+  frame();
+}
+
+function stopRecording() {
+  if (!REC.recording) return;
+  REC.recording = false;
+  cancelAnimationFrame(REC.rafId);
+
+  REC.stream.getTracks().forEach(t => t.stop());
+  try { REC.source.disconnect(); } catch (e) {}
+  try { REC.processor.disconnect(); } catch (e) {}
+  try { REC.analyser.disconnect(); } catch (e) {}
+  try { REC.silentGain.disconnect(); } catch (e) {}
+
+  recordBtn.textContent = 'Start Recording';
+  recordBtn.classList.remove('recording');
+  recordBtn.disabled = false;
+  recordStatus.textContent = '';
+
+  const totalLen = REC.chunks.reduce((s, c) => s + c.length, 0);
+  const samples = new Float32Array(totalLen);
+  let offset = 0;
+  for (const c of REC.chunks) { samples.set(c, offset); offset += c.length; }
+  REC.chunks = [];
+
+  const durationSec = totalLen / REC.sampleRate;
+  setRecordMessage('Captured ' + totalLen.toLocaleString() + ' samples (' + durationSec.toFixed(2) + 's at ' + REC.sampleRate + ' Hz). Feature estimation isn’t wired up yet — that’s the next step.', 'success');
+
+  REC.ctx.close();
+}
+</script>
+</body>
+</html>
