@@ -4,6 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Vocal Biomarker Explorer &mdash; Parkinson's Voice Screening Model</title>
+<meta name="description" content="Interactive research demo: adjust acoustic voice-biomarker sliders, or record your own sustained vowel, to see how a patient-independently validated logistic regression model scores the likelihood of Parkinson's-associated vocal impairment.">
+<meta property="og:title" content="Vocal Biomarker Explorer &mdash; Parkinson's Voice Screening Model">
+<meta property="og:description" content="Interactive research demo exploring acoustic voice biomarkers for Parkinson's-associated vocal impairment. Patient-independent AUC 0.79, plus an in-browser voice recording feature.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ksy74.github.io/vocal-biomarker-explorer/">
+<meta property="og:image" content="https://ksy74.github.io/vocal-biomarker-explorer/og-preview.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Vocal Biomarker Explorer &mdash; Parkinson's Voice Screening Model">
+<meta name="twitter:description" content="Interactive research demo exploring acoustic voice biomarkers for Parkinson's-associated vocal impairment.">
+<meta name="twitter:image" content="https://ksy74.github.io/vocal-biomarker-explorer/og-preview.png">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%231F6F5C'/%3E%3Cpath d='M6 17h3l2-8 3 15 3-11 2 4h7' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -18,6 +29,7 @@
     --teal-bg: #E4F1EC;
     --amber: #A9761F;
     --amber-bg: #FBF0DD;
+    --amber-text: #7A5416;
     --red: #A63B26;
     --red-bg: #FAE7E2;
   }
@@ -99,8 +111,16 @@
     height: 4px;
     border-radius: 2px;
     background: var(--line);
-    outline: none;
     margin: 0;
+  }
+  input[type=range]:focus-visible {
+    outline: 2px solid var(--teal);
+    outline-offset: 4px;
+    border-radius: 2px;
+  }
+  button:focus-visible {
+    outline: 2px solid var(--teal);
+    outline-offset: 2px;
   }
   input[type=range]::-webkit-slider-thumb {
     -webkit-appearance: none;
@@ -150,7 +170,7 @@
     margin-bottom: 20px;
   }
   .badge.low { background: var(--teal-bg); color: var(--teal); }
-  .badge.mid { background: var(--amber-bg); color: var(--amber); }
+  .badge.mid { background: var(--amber-bg); color: var(--amber-text); }
   .badge.high { background: var(--red-bg); color: var(--red); }
   .contrib-title {
     font-family: 'IBM Plex Mono', monospace;
@@ -252,7 +272,7 @@
     font-size: 9.5px;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: var(--amber);
+    color: var(--amber-text);
     background: var(--amber-bg);
     border-radius: 4px;
     padding: 2px 6px;
@@ -260,6 +280,47 @@
     vertical-align: middle;
   }
   .approx-badge.show { display: inline-block; }
+  .record-playback {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 12px 0 0;
+  }
+  .record-playback.show { display: flex; }
+  .record-playback audio { height: 32px; max-width: 260px; }
+  .record-download {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--teal);
+    text-decoration: none;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 12px;
+  }
+  .record-download:hover { border-color: var(--teal); }
+  .record-details {
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .record-details summary {
+    cursor: pointer;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--teal);
+  }
+  .record-details[open] summary { margin-bottom: 8px; }
+  .record-diag-row {
+    display: grid;
+    grid-template-columns: 150px 1fr;
+    gap: 8px;
+    padding: 3px 0;
+    line-height: 1.5;
+  }
+  .record-diag-name { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--ink); }
 </style>
 <script data-goatcounter="https://vocal-biomarker.goatcounter.com/count"
         async src="https://gc.zgo.at/count.js"></script>
@@ -277,10 +338,18 @@
     </p>
     <div style="display:flex; align-items:center; gap:14px; margin-bottom:12px; flex-wrap:wrap;">
       <button id="record-btn" class="record-btn">Start Recording</button>
-      <span id="record-status" class="record-status"></span>
+      <span id="record-status" class="record-status" aria-live="polite"></span>
     </div>
-    <canvas id="record-canvas" class="record-canvas" width="900" height="80"></canvas>
-    <p id="record-message" class="record-message info"></p>
+    <canvas id="record-canvas" class="record-canvas" width="900" height="80" role="img" aria-label="Live microphone waveform while recording"></canvas>
+    <p id="record-message" class="record-message info" aria-live="polite"></p>
+    <div id="record-playback" class="record-playback">
+      <audio id="record-audio" controls></audio>
+      <a id="record-download" class="record-download" download="recording.wav">Download recording (.wav)</a>
+    </div>
+    <details id="record-details" class="record-details">
+      <summary>Raw diagnostic numbers</summary>
+      <div id="record-diag"></div>
+    </details>
     <p class="footnote" style="margin-top:16px; padding-top:14px;">
       <b>About these estimates.</b> Everything in this panel is computed client-side in your browser from an uncalibrated microphone using basic pitch-detection and amplitude-analysis code &mdash; it is <b>not</b> the clinical MDVP acoustic analysis software the underlying model was actually trained on. Populated sliders (especially those marked <span class="approx-badge show" style="display:inline-block;">approx.</span>) are rough, uncalibrated estimates for exploring the model, not a measurement to draw any real conclusion from.
     </p>
@@ -322,7 +391,8 @@
 
   <p class="footnote">
     <b>How to read this.</b> The dial shows the model's output probability. The lower tick marks the 0.5 <b>screening</b> threshold (89% sensitivity, 35% specificity in patient-independent testing); the upper tick marks the 0.91 <b>confirmatory</b> threshold (50% sensitivity, 94% specificity). Feature contribution bars show how far each measure pushes the score toward PD (right, red) or away from it (left, teal), based on the standardized value relative to the full dataset.<br><br>
-    <b>This is a research and educational demonstration, not a diagnostic tool.</b> The underlying model is an 8-feature logistic regression fit to the public Oxford Parkinson's Disease Detection dataset (195 recordings, 32 individuals), evaluated with patient-independent cross-validation (AUC = 0.79). It has not been validated on an external cohort and should not be used to assess any real individual.
+    <b>This is a research and educational demonstration, not a diagnostic tool.</b> The underlying model is an 8-feature logistic regression fit to the public Oxford Parkinson's Disease Detection dataset (195 recordings, 32 individuals), evaluated with patient-independent cross-validation (AUC = 0.79). It should not be used to assess any real individual.<br><br>
+    <b>External validation.</b> This exact model's 8 features don't have clean equivalents in other public voice datasets, so it can't be directly re-scored elsewhere. As a proxy for external validity, a fresh model trained with the same patient-independent methodology on an independent, larger dataset (756 recordings, 252 patients &mdash; Sakar et al., 2018) reaches a comparable AUC (&asymp;0.83), suggesting the acoustic approach generalizes to a new population even though this specific trained model could not be ported feature-for-feature.
   </p>
 </div>
 
@@ -392,7 +462,7 @@ function buildSliders() {
         <span class="slider-name">${MODEL.labels[f]}<span class="approx-badge" id="approx-${cssId(f)}" title="Rough client-side approximation from your recording, not the clinical computation">approx.</span></span>
         <span class="slider-val" id="val-${cssId(f)}">${state[f].toFixed(d)}</span>
       </div>
-      <input type="range" id="slider-${cssId(f)}" min="${lo}" max="${hi}" step="${stepFor(f)}" value="${state[f]}">
+      <input type="range" id="slider-${cssId(f)}" min="${lo}" max="${hi}" step="${stepFor(f)}" value="${state[f]}" aria-label="${MODEL.labels[f]}">
       <div class="range-labels"><span>${lo.toFixed(d)}</span><span>${hi.toFixed(d)}</span></div>
     `;
     containers[MODEL.groups[f]].appendChild(row);
@@ -652,6 +722,8 @@ function stopRecording() {
   const rawSampleRate = REC.sampleRate;
   REC.ctx.close();
 
+  showPlayback(samples, rawSampleRate);
+
   const analysis = analyzeRecording(samples, rawSampleRate);
   const pitchEst = estimatePitchFeatures(analysis);
   REC.lastAnalysis = analysis;
@@ -663,6 +735,7 @@ function stopRecording() {
       ' voiced frames — not enough sustained pitch to estimate anything reliably. Try a louder, steadier "ahh" closer to the mic for the full 5 seconds, with less background noise.',
       'error'
     );
+    setRecordDiagnostics('');
     return;
   }
 
@@ -670,17 +743,23 @@ function stopRecording() {
   applyEstimate('MDVP:Flo(Hz)', pitchEst.flo, false);
   applyEstimate('MDVP:Fhi(Hz)', pitchEst.fhi, false);
 
+  const diagRows = [
+    diagRow('Voiced frames', pitchEst.voicedCount + ' / ' + pitchEst.totalFrames),
+    diagRow('Fo (mean pitch)', pitchEst.fo.toFixed(1) + ' Hz'),
+    diagRow('Flo–Fhi (pitch range)', pitchEst.flo.toFixed(1) + '–' + pitchEst.fhi.toFixed(1) + ' Hz'),
+  ];
+
   const noiseEst = estimateAmplitudeNoiseFeatures(analysis);
   REC.lastNoiseEst = noiseEst;
-  let noiseMsg = '(Nonlinear features aren’t wired up yet — that’s next.)';
   if (noiseEst.ok) {
     const nhr = mapNhr(noiseEst.meanAperiodicity, noiseEst.jitterProxy);
     const apq = mapApq(noiseEst.apqProxy);
     applyEstimate('NHR', nhr, false);
     applyEstimate('MDVP:APQ', apq, false);
-    noiseMsg = 'NHR ' + nhr.toFixed(4) + ', APQ ' + apq.toFixed(4) +
-      ' (raw: jitter ' + (noiseEst.jitterProxy * 100).toFixed(2) + '%, aperiodicity ' + noiseEst.meanAperiodicity.toFixed(3) +
-      ', amp. perturbation ' + (noiseEst.apqProxy * 100).toFixed(2) + '%).';
+    diagRows.push(
+      diagRow('NHR (mapped)', nhr.toFixed(4) + ' — raw aperiodicity ' + noiseEst.meanAperiodicity.toFixed(3) + ', jitter ' + (noiseEst.jitterProxy * 100).toFixed(2) + '%'),
+      diagRow('APQ (mapped)', apq.toFixed(4) + ' — raw amp. perturbation ' + (noiseEst.apqProxy * 100).toFixed(2) + '%'),
+    );
 
     const nonlinear = estimateNonlinearFeatures(analysis);
     if (nonlinear.ok) {
@@ -690,19 +769,76 @@ function stopRecording() {
       applyEstimate('PPE', ppe, true);
       applyEstimate('spread1', spread1, true);
       applyEstimate('spread2', spread2, true);
-      noiseMsg += ' PPE ' + ppe.toFixed(4) + ', spread1 ' + spread1.toFixed(3) + ', spread2 ' + spread2.toFixed(4) +
-        ' (raw: F0 CV ' + (nonlinear.cv * 100).toFixed(2) + '%, entropy ' + nonlinear.entropyNorm.toFixed(3) +
-        ') — marked approx., these three are rough entropy/variability proxies, not the original nonlinear dynamical measures.';
+      diagRows.push(
+        diagRow('PPE (approx.)', ppe.toFixed(4) + ' — raw entropy ' + nonlinear.entropyNorm.toFixed(3)),
+        diagRow('spread1 (approx.)', spread1.toFixed(3) + ' — raw F0 CV ' + (nonlinear.cv * 100).toFixed(2) + '%'),
+        diagRow('spread2 (approx.)', spread2.toFixed(4) + ' — raw F0 CV ' + (nonlinear.cv * 100).toFixed(2) + '%'),
+      );
     }
   }
   update();
+  setRecordDiagnostics(diagRows.join(''));
 
   setRecordMessage(
-    'Pitch detected from ' + pitchEst.voicedCount + '/' + pitchEst.totalFrames + ' voiced frames — ' +
-    'Fo ' + pitchEst.fo.toFixed(1) + ' Hz, range ' + pitchEst.flo.toFixed(1) + '–' + pitchEst.fhi.toFixed(1) + ' Hz. ' +
-    noiseMsg,
+    'Recording processed — pitch detected from ' + pitchEst.voicedCount + '/' + pitchEst.totalFrames +
+    ' voiced frames. Sliders updated below (see "Raw diagnostic numbers" for the full breakdown).',
     'success'
   );
+}
+
+function diagRow(name, value) {
+  return '<div class="record-diag-row"><span class="record-diag-name">' + name + '</span><span>' + value + '</span></div>';
+}
+
+function setRecordDiagnostics(html) {
+  document.getElementById('record-diag').innerHTML = html;
+}
+
+// ---- WAV playback / download of the raw recording ----
+function encodeWav(samples, sampleRate) {
+  const bitsPerSample = 16;
+  const blockAlign = bitsPerSample / 8;
+  const dataSize = samples.length * blockAlign;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
+  function writeString(offset, str) {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  }
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+  writeString(36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  let offset = 44;
+  for (let i = 0; i < samples.length; i++, offset += 2) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return new Blob([buffer], { type: 'audio/wav' });
+}
+
+function showPlayback(samples, sampleRate) {
+  const blob = encodeWav(samples, sampleRate);
+  const url = URL.createObjectURL(blob);
+  if (REC.lastAudioUrl) URL.revokeObjectURL(REC.lastAudioUrl);
+  REC.lastAudioUrl = url;
+
+  const audio = document.getElementById('record-audio');
+  const download = document.getElementById('record-download');
+  audio.src = url;
+  download.href = url;
+  document.getElementById('record-playback').classList.add('show');
 }
 
 function estimateAmplitudeNoiseFeatures(analysis) {
